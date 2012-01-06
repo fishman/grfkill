@@ -107,54 +107,77 @@ screen_change_cb (GtkWidget *widget,
 
 static void
 load_pixbuf (GtkImage   *icon,
-	     const char *icon_name)
+	     const gchar *icon_name)
 {
 	GtkIconTheme *icon_theme;
 	GdkPixbuf *pixbuf;
 
-	icon_theme = gtk_icon_theme_new ();
-	gtk_icon_theme_prepend_search_path (icon_theme, ".");
+	g_print ("button pressed %s\n", icon_name);
 
-	pixbuf = gtk_icon_theme_load_icon (icon_theme,
-					   icon_name,
-					   ICON_SIZE,
-					   0,
-					   NULL);
-	gtk_image_set_from_pixbuf (icon, pixbuf);
-	g_object_unref (icon_theme);
+	/* icon_theme = gtk_icon_theme_new (); */
+	/* gtk_icon_theme_prepend_search_path (icon_theme, "."); */
+
+	/* pixbuf = gtk_icon_theme_load_icon (icon_theme, */
+	/*                    icon_name, */
+	/*                    ICON_SIZE, */
+	/*                    0, */
+	/*                    NULL); */
+	/* gtk_image_set_from_pixbuf (icon, pixbuf); */
+	/* g_object_unref (icon_theme); */
+	
 }
 
-static void
-wlan_switch_activate_cb (GtkSwitch *wlan_switch,
-			 gboolean   active,
-			 GtkImage  *wlan_icon)
+static gboolean
+switch_activate_cb (GtkSwitch *gtk_switch,
+					GtkImage *gtk_icon,
+					char *name)
 {
-	if (gtk_switch_get_active (wlan_switch))
-		load_pixbuf (wlan_icon, "wlan-unblocked");
-	else
-		load_pixbuf (wlan_icon, "wlan-blocked");
+	if (gtk_switch_get_active (gtk_switch)){
+		load_pixbuf (gtk_icon, name, FALSE);
+		return FALSE;
+	}
+	else {
+		load_pixbuf (gtk_icon, name, TRUE);
+		return TRUE;
+	}
 }
 
 static void
-bt_switch_activate_cb (GtkSwitch *bt_switch,
+wlan_switch_activate_cb (GtkSwitch *g_switch,
+			 gboolean   active,
+			 GtkImage  *icon)
+{
+	gboolean blocked;
+	gchar index[UCHAR_MAX];
+	blocked = switch_activate_cb (g_switch, icon, "wlan");
+
+	if(initialized /* if we don't do this rfkill is gonna toggle on startup */){
+		g_ascii_dtostr(index, UCHAR_MAX, wlan_index);
+		system(g_strconcat("rfkill ", blocked ? "block " : "unblock ", index, NULL));
+	}
+}
+
+static void
+bt_switch_activate_cb (GtkSwitch *g_switch,
 		       gboolean   active,
-		       GtkImage  *bt_icon)
+		       GtkImage  *icon)
 {
-	if (gtk_switch_get_active (bt_switch))
-		load_pixbuf (bt_icon, "bt-unblocked");
-	else
-		load_pixbuf (bt_icon, "bt-blocked");
+	gboolean blocked;
+	gchar index[UCHAR_MAX];
+	blocked = switch_activate_cb (g_switch, icon, "bt");
+
+	if(initialized /* if we don't do this rfkill is gonna toggle on startup */){
+		g_ascii_dtostr(index, UCHAR_MAX, bt_index);
+		system(g_strconcat("rfkill ", blocked ? "block " : "unblock ", index, NULL));
+	}
 }
 
 static void
-wwan_switch_activate_cb (GtkSwitch *wwan_switch,
+wwan_switch_activate_cb (GtkSwitch *g_switch,
 			 gboolean   active,
-			 GtkImage  *wwan_icon)
+			 GtkImage  *icon)
 {
-	if (gtk_switch_get_active (wwan_switch))
-		load_pixbuf (wwan_icon, "wwan-unblocked");
-	else
-		load_pixbuf (wwan_icon, "wwan-blocked");
+	switch_activate_cb (g_switch, icon, "wwan");
 }
 
 
@@ -169,14 +192,98 @@ on_event_cb (GtkWidget *widget,
 		gtk_main_quit ();
 		break;
 	case GDK_ENTER_NOTIFY:
-		gtk_image_set_from_file (GTK_IMAGE (close_icon), "close-red.svg");
+		gtk_image_set_from_pixbuf (GTK_IMAGE (close_icon), close_red_pb);
 		break;
 	case GDK_LEAVE_NOTIFY:
-		gtk_image_set_from_file (GTK_IMAGE (close_icon), "close.svg");
+		gtk_image_set_from_pixbuf (GTK_IMAGE (close_icon), close_icon_pb);
 		break;
 	}
 
 	return FALSE;
+}
+
+void init_close_button(GtkWidget **eventbox){
+	GtkWidget *close_icon;
+
+	*eventbox = gtk_event_box_new ();
+	gtk_event_box_set_visible_window (GTK_EVENT_BOX (*eventbox), FALSE);
+	close_icon = gtk_image_new_from_pixbuf (close_icon_pb);
+
+	gtk_container_add (GTK_CONTAINER (*eventbox), close_icon);
+	gtk_widget_add_events (*eventbox, GDK_BUTTON_PRESS_MASK);
+	gtk_widget_add_events (*eventbox, GDK_ENTER_NOTIFY_MASK);
+	gtk_widget_add_events (*eventbox, GDK_LEAVE_NOTIFY_MASK);
+
+	g_signal_connect (G_OBJECT (*eventbox), "button-press-event",
+			  G_CALLBACK (on_event_cb), close_icon);
+	g_signal_connect (G_OBJECT (*eventbox), "enter-notify-event",
+			  G_CALLBACK (on_event_cb), close_icon);
+	g_signal_connect (G_OBJECT (*eventbox), "leave-notify-event",
+			  G_CALLBACK (on_event_cb), close_icon);
+}
+
+void init_button(GtkWidget *icon, GtkWidget *rf_switch, void *callback){
+	g_signal_connect (G_OBJECT (rf_switch), "notify::active",
+			  G_CALLBACK (callback), icon);
+	gtk_switch_set_active (GTK_SWITCH (rf_switch), TRUE);
+}
+
+gboolean get_rfkill_state(gchar *soft_state){
+	if (g_str_has_prefix(soft_state, "0")) {
+		return TRUE;
+	}
+	else {
+		return FALSE;
+	}
+}
+
+void parse_directory(){
+	const gchar path[] = "/sys/class/rfkill";
+	GDir *d = g_dir_open( path,0,NULL );
+	gchar *contents;
+	gchar *soft_state;
+	gchar *index;
+	gsize length;
+
+	const gchar * files;
+	while ( ( files = g_dir_read_name( d ) ) != NULL ) {
+		gchar *filename = g_build_filename( path,files,NULL );
+		/* rfkill folder is full of symlinks */
+		if ( g_file_test( filename,G_FILE_TEST_IS_SYMLINK ) ) {
+			g_file_get_contents(g_strconcat(filename, "/name",NULL), &contents, &length, NULL);
+			g_file_get_contents(g_strconcat(filename, "/index",NULL), &index, &length, NULL);
+			g_file_get_contents(g_strconcat(filename, "/soft",NULL), &soft_state, &length, NULL);
+
+			if (g_strrstr (contents, "acer-wireless")) {
+				wlan_state = get_rfkill_state(soft_state);
+				wlan_index = g_ascii_strtoll(index, NULL, 10);
+			}
+			else if (g_strrstr (contents, "acer-bluetooth")) {
+				bt_state = get_rfkill_state(soft_state);
+				bt_index = g_ascii_strtoll(index, NULL, 10);
+			}
+			g_free(index);
+			g_free(contents);
+			g_free(soft_state);
+			g_free( filename );
+		}
+	}
+	g_dir_close( d );
+}
+
+void init_pixbufs(){
+	bt_blocked_pb     = gdk_pixbuf_from_pixdata(&bt_blocked_inline, TRUE, NULL);
+	bt_icon_pb        = gdk_pixbuf_from_pixdata(&bt_icon_inline, TRUE, NULL);
+	bt_unblocked_pb   = gdk_pixbuf_from_pixdata(&bt_unblocked_inline, TRUE, NULL);
+	close_icon_pb     = gdk_pixbuf_from_pixdata(&close_inline, TRUE, NULL);
+	close_red_pb      = gdk_pixbuf_from_pixdata(&close_red_inline, TRUE, NULL);
+	close_window_pb   = gdk_pixbuf_from_pixdata(&close_window_inline, TRUE, NULL);
+	wlan_blocked_pb   = gdk_pixbuf_from_pixdata(&wlan_blocked_inline, TRUE, NULL);
+	wlan_icon_pb      = gdk_pixbuf_from_pixdata(&wlan_icon_inline, TRUE, NULL);
+	wlan_unblocked_pb = gdk_pixbuf_from_pixdata(&wlan_unblocked_inline, TRUE, NULL);
+	wwan_blocked_pb   = gdk_pixbuf_from_pixdata(&wwan_blocked_inline, TRUE, NULL);
+	wwan_icon_pb      = gdk_pixbuf_from_pixdata(&wwan_icon_inline, TRUE, NULL);
+	wwan_unblocked_pb = gdk_pixbuf_from_pixdata(&wwan_unblocked_inline, TRUE, NULL);
 }
 
 int
@@ -200,9 +307,13 @@ main (int argc, char *argv[])
 
 	GtkBorder padding;
 
+
 	char *text;
 
 	gtk_init (&argc, &argv);
+
+	parse_directory();
+	init_pixbufs();
 
 	settings = gtk_settings_get_default ();
 	g_object_set (G_OBJECT (settings),
@@ -229,48 +340,42 @@ main (int argc, char *argv[])
 	g_signal_connect (G_OBJECT (window), "screen_changed", G_CALLBACK (screen_change_cb), NULL);
 
 	grid = gtk_grid_new ();
-	eventbox = gtk_event_box_new ();
-	gtk_event_box_set_visible_window (GTK_EVENT_BOX (eventbox), FALSE);
-	close_icon = gtk_image_new_from_file ("close.svg");
 
 	wifi_icon = gtk_image_new ();
 	rf_switch1 = gtk_switch_new ();
-	g_signal_connect (G_OBJECT (rf_switch1), "notify::active",
-			  G_CALLBACK (wlan_switch_activate_cb), wifi_icon);
+	init_button(wifi_icon, rf_switch1, wlan_switch_activate_cb);
+	gtk_switch_set_active (GTK_SWITCH (rf_switch1), wlan_state);
+
 	bt_icon = gtk_image_new ();
 	rf_switch2 = gtk_switch_new ();
-	g_signal_connect (G_OBJECT (rf_switch2), "notify::active",
-			  G_CALLBACK (bt_switch_activate_cb), bt_icon);
+	init_button(bt_icon, rf_switch2, bt_switch_activate_cb);
+	gtk_switch_set_active (GTK_SWITCH (rf_switch2), bt_state);
+
 	wwan_icon = gtk_image_new ();
 	rf_switch3 = gtk_switch_new ();
-	g_signal_connect (G_OBJECT (rf_switch3), "notify::active",
-			  G_CALLBACK (wwan_switch_activate_cb), wwan_icon);
+	init_button(wwan_icon, rf_switch3, wwan_switch_activate_cb);
 
-	gtk_switch_set_active (GTK_SWITCH (rf_switch1), TRUE);
-	gtk_switch_set_active (GTK_SWITCH (rf_switch2), TRUE);
-	gtk_switch_set_active (GTK_SWITCH (rf_switch3), TRUE);
+	// rfkill will now be used
+	initialized = TRUE;
 
-	gtk_container_add (GTK_CONTAINER (eventbox), close_icon);
-	gtk_widget_add_events (eventbox, GDK_BUTTON_PRESS_MASK);
-	gtk_widget_add_events (eventbox, GDK_ENTER_NOTIFY_MASK);
-	gtk_widget_add_events (eventbox, GDK_LEAVE_NOTIFY_MASK);
-
-	g_signal_connect (G_OBJECT (eventbox), "button-press-event",
-			  G_CALLBACK (on_event_cb), close_icon);
-	g_signal_connect (G_OBJECT (eventbox), "enter-notify-event",
-			  G_CALLBACK (on_event_cb), close_icon);
-	g_signal_connect (G_OBJECT (eventbox), "leave-notify-event",
-			  G_CALLBACK (on_event_cb), close_icon);
+	init_close_button(&eventbox);
 
 	gtk_grid_set_row_spacing ((GtkGrid *)grid, 10);
 	gtk_grid_set_column_spacing ((GtkGrid *)grid, 5);
 	gtk_grid_attach ((GtkGrid *)grid, eventbox, ICON_SAPCE*3-1, 0, 1, 1);
 	gtk_grid_attach ((GtkGrid *)grid, wifi_icon, 0, 1, ICON_SAPCE, 1);
-	gtk_grid_attach_next_to ((GtkGrid *)grid, bt_icon, wifi_icon, GTK_POS_RIGHT, ICON_SAPCE, 1);
-	gtk_grid_attach_next_to ((GtkGrid *)grid, wwan_icon, bt_icon, GTK_POS_RIGHT, ICON_SAPCE, 1);
 	gtk_grid_attach_next_to ((GtkGrid *)grid, rf_switch1, wifi_icon, GTK_POS_BOTTOM, ICON_SAPCE, 1);
+
+
+	/* show bt icon */
+	gtk_grid_attach_next_to ((GtkGrid *)grid, bt_icon, wifi_icon, GTK_POS_RIGHT, ICON_SAPCE, 1);
 	gtk_grid_attach_next_to ((GtkGrid *)grid, rf_switch2, bt_icon, GTK_POS_BOTTOM, ICON_SAPCE, 1);
-	/* gtk_grid_attach_next_to ((GtkGrid *)grid, rf_switch3, wwan_icon, GTK_POS_BOTTOM, ICON_SAPCE, 1); */
+
+	/* show wwan icon */
+	if (wwan_index != 0){
+		gtk_grid_attach_next_to ((GtkGrid *)grid, wwan_icon, bt_icon, GTK_POS_RIGHT, ICON_SAPCE, 1);
+		gtk_grid_attach_next_to ((GtkGrid *)grid, rf_switch3, wwan_icon, GTK_POS_BOTTOM, ICON_SAPCE, 1);
+	}
 
 	gtk_container_add (GTK_CONTAINER (window), grid);
 
@@ -291,3 +396,5 @@ main (int argc, char *argv[])
 
 	return 0;
 }
+
+/* vim: set sts=4 sw=4 ts=4: */
