@@ -1,10 +1,38 @@
 #include <gtk/gtk.h>
+#include <gdk-pixbuf/gdk-pixdata.h>
+#include <stdlib.h>
+
 
 #define BACKGROUND_ALPHA 0.75
 #define ICON_SAPCE 6
 #define ICON_SIZE 96
 
-void
+#include "bt-blocked.h"
+#include "bt-unblocked.h"
+#include "close.h"
+#include "close-red.h"
+#include "wlan-blocked.h"
+#include "wlan-unblocked.h"
+#include "wwan-blocked.h"
+#include "wwan-unblocked.h"
+
+static gboolean wwan_state = TRUE;
+static gboolean bt_state = TRUE;
+static gboolean wlan_state = TRUE;
+static gint64 wwan_index = 0;
+static gint64 bt_index = 0;
+static gint64 wlan_index = 0;
+static gboolean initialized = FALSE;
+
+GdkPixbuf *bt_blocked_pb;
+GdkPixbuf *bt_unblocked_pb;
+GdkPixbuf *close_icon_pb;
+GdkPixbuf *close_red_pb;
+GdkPixbuf *wlan_blocked_pb;
+GdkPixbuf *wlan_unblocked_pb;
+GdkPixbuf *wwan_blocked_pb;
+GdkPixbuf *wwan_unblocked_pb;
+
 draw_rounded_rectangle (cairo_t *cr,
 			gdouble  aspect,
 			gdouble  x,
@@ -114,17 +142,16 @@ load_pixbuf (GtkImage   *icon,
 
 	g_print ("button pressed %s\n", icon_name);
 
-	/* icon_theme = gtk_icon_theme_new (); */
-	/* gtk_icon_theme_prepend_search_path (icon_theme, "."); */
+	icon_theme = gtk_icon_theme_new ();
+	gtk_icon_theme_prepend_search_path (icon_theme, ".");
 
-	/* pixbuf = gtk_icon_theme_load_icon (icon_theme, */
-	/*                    icon_name, */
-	/*                    ICON_SIZE, */
-	/*                    0, */
-	/*                    NULL); */
-	/* gtk_image_set_from_pixbuf (icon, pixbuf); */
-	/* g_object_unref (icon_theme); */
-	
+	pixbuf = gtk_icon_theme_load_icon (icon_theme,
+					   icon_name,
+					   ICON_SIZE,
+					   0,
+					   NULL);
+	gtk_image_set_from_pixbuf (icon, pixbuf);
+	g_object_unref (icon_theme);
 }
 
 static gboolean
@@ -133,11 +160,11 @@ switch_activate_cb (GtkSwitch *gtk_switch,
 					char *name)
 {
 	if (gtk_switch_get_active (gtk_switch)){
-		load_pixbuf (gtk_icon, name, FALSE);
+		load_pixbuf (gtk_icon, g_strconcat(name, "-unblocked",NULL));
 		return FALSE;
 	}
 	else {
-		load_pixbuf (gtk_icon, name, TRUE);
+		load_pixbuf (gtk_icon, g_strconcat(name, "-blocked",NULL));
 		return TRUE;
 	}
 }
@@ -150,6 +177,10 @@ wlan_switch_activate_cb (GtkSwitch *g_switch,
 	gboolean blocked;
 	gchar index[UCHAR_MAX];
 	blocked = switch_activate_cb (g_switch, icon, "wlan");
+	if (gtk_switch_get_active (g_switch))
+		gtk_image_set_from_pixbuf(icon, wlan_unblocked_pb);
+	else
+		gtk_image_set_from_pixbuf(icon, wlan_blocked_pb);
 
 	if(initialized /* if we don't do this rfkill is gonna toggle on startup */){
 		g_ascii_dtostr(index, UCHAR_MAX, wlan_index);
@@ -165,6 +196,11 @@ bt_switch_activate_cb (GtkSwitch *g_switch,
 	gboolean blocked;
 	gchar index[UCHAR_MAX];
 	blocked = switch_activate_cb (g_switch, icon, "bt");
+
+	if (gtk_switch_get_active (g_switch))
+		gtk_image_set_from_pixbuf(icon, bt_unblocked_pb);
+	else
+		gtk_image_set_from_pixbuf(icon, bt_blocked_pb);
 
 	if(initialized /* if we don't do this rfkill is gonna toggle on startup */){
 		g_ascii_dtostr(index, UCHAR_MAX, bt_index);
@@ -273,16 +309,12 @@ void parse_directory(){
 
 void init_pixbufs(){
 	bt_blocked_pb     = gdk_pixbuf_from_pixdata(&bt_blocked_inline, TRUE, NULL);
-	bt_icon_pb        = gdk_pixbuf_from_pixdata(&bt_icon_inline, TRUE, NULL);
 	bt_unblocked_pb   = gdk_pixbuf_from_pixdata(&bt_unblocked_inline, TRUE, NULL);
 	close_icon_pb     = gdk_pixbuf_from_pixdata(&close_inline, TRUE, NULL);
 	close_red_pb      = gdk_pixbuf_from_pixdata(&close_red_inline, TRUE, NULL);
-	close_window_pb   = gdk_pixbuf_from_pixdata(&close_window_inline, TRUE, NULL);
 	wlan_blocked_pb   = gdk_pixbuf_from_pixdata(&wlan_blocked_inline, TRUE, NULL);
-	wlan_icon_pb      = gdk_pixbuf_from_pixdata(&wlan_icon_inline, TRUE, NULL);
 	wlan_unblocked_pb = gdk_pixbuf_from_pixdata(&wlan_unblocked_inline, TRUE, NULL);
 	wwan_blocked_pb   = gdk_pixbuf_from_pixdata(&wwan_blocked_inline, TRUE, NULL);
-	wwan_icon_pb      = gdk_pixbuf_from_pixdata(&wwan_icon_inline, TRUE, NULL);
 	wwan_unblocked_pb = gdk_pixbuf_from_pixdata(&wwan_unblocked_inline, TRUE, NULL);
 }
 
@@ -308,7 +340,6 @@ main (int argc, char *argv[])
 
 	GtkWidget *window;
 	GtkWidget *eventbox;
-	GtkWidget *close_icon;
 	GtkWidget *wifi_icon;
 	GtkWidget *bt_icon;
 	GtkWidget *wwan_icon;
