@@ -43,6 +43,10 @@
 #define DEFAULT_WLAN "acer-wireless"
 #define DEFAULT_BT   "acer-bluetooth"
 
+static gchar css_data[] = "GtkWindow {\
+    border-radius: 5;\
+	}";
+
 static gboolean wwan_state = TRUE;
 static gboolean bt_state = TRUE;
 static gboolean wlan_state = TRUE;
@@ -423,7 +427,7 @@ main (int argc, char *argv[])
 		      NULL);
 
 	css_provider = gtk_css_provider_new ();
-	if (!gtk_css_provider_load_from_path (css_provider, "window.css", NULL)) {
+	if (!gtk_css_provider_load_from_data (css_provider, css_data, sizeof(css_data), NULL)) {
 		g_warning ("Failed to load css");
 		return -1;
 	}
