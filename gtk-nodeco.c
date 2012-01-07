@@ -16,6 +16,9 @@
 #include "wwan-blocked.h"
 #include "wwan-unblocked.h"
 
+#define DEFAULT_WLAN "acer-wireless"
+#define DEFAULT_BT   "acer-bluetooth"
+
 static gboolean wwan_state = TRUE;
 static gboolean bt_state = TRUE;
 static gboolean wlan_state = TRUE;
@@ -24,14 +27,17 @@ static gint64 bt_index = 0;
 static gint64 wlan_index = 0;
 static gboolean initialized = FALSE;
 
-GdkPixbuf *bt_blocked_pb;
-GdkPixbuf *bt_unblocked_pb;
-GdkPixbuf *close_icon_pb;
-GdkPixbuf *close_red_pb;
-GdkPixbuf *wlan_blocked_pb;
-GdkPixbuf *wlan_unblocked_pb;
-GdkPixbuf *wwan_blocked_pb;
-GdkPixbuf *wwan_unblocked_pb;
+static GdkPixbuf *bt_blocked_pb;
+static GdkPixbuf *bt_unblocked_pb;
+static GdkPixbuf *close_icon_pb;
+static GdkPixbuf *close_red_pb;
+static GdkPixbuf *wlan_blocked_pb;
+static GdkPixbuf *wlan_unblocked_pb;
+static GdkPixbuf *wwan_blocked_pb;
+static GdkPixbuf *wwan_unblocked_pb;
+
+static gchar *wlan_device = NULL;
+static gchar *bt_device   = NULL;
 
 draw_rounded_rectangle (cairo_t *cr,
 			gdouble  aspect,
@@ -140,7 +146,7 @@ load_pixbuf (GtkImage   *icon,
 	GtkIconTheme *icon_theme;
 	GdkPixbuf *pixbuf;
 
-	g_print ("button pressed %s\n", icon_name);
+	/* g_print ("button pressed %s\n", icon_name); */
 
 	icon_theme = gtk_icon_theme_new ();
 	gtk_icon_theme_prepend_search_path (icon_theme, ".");
@@ -224,7 +230,7 @@ on_event_cb (GtkWidget *widget,
 {
 	switch (event->type) {
 	case GDK_BUTTON_PRESS:
-		g_print ("button pressed\n");
+		/* g_print ("button pressed\n"); */
 		gtk_main_quit ();
 		break;
 	case GDK_ENTER_NOTIFY:
@@ -290,11 +296,11 @@ void parse_directory(){
 			g_file_get_contents(g_strconcat(filename, "/index",NULL), &index, &length, NULL);
 			g_file_get_contents(g_strconcat(filename, "/soft",NULL), &soft_state, &length, NULL);
 
-			if (g_strrstr (contents, "acer-wireless")) {
+			if (g_strrstr (contents, wlan_device)) {
 				wlan_state = get_rfkill_state(soft_state);
 				wlan_index = g_ascii_strtoll(index, NULL, 10);
 			}
-			else if (g_strrstr (contents, "acer-bluetooth")) {
+			else if (g_strrstr (contents, bt_device)) {
 				bt_state = get_rfkill_state(soft_state);
 				bt_index = g_ascii_strtoll(index, NULL, 10);
 			}
@@ -329,6 +335,34 @@ quit_timeout_handler(GtkWidget *window)
 	return TRUE;
 }
 
+static void
+parse_option(gint *pargc, gchar **pargv[]){
+	GOptionContext *context;
+	GError *err = NULL;
+
+	GOptionEntry entries[] = {
+		{ "wlan", 'w', 0, G_OPTION_ARG_STRING, &wlan_device,
+			"set the rfkill name for your wireless device", "acer-wireless" },
+		{ "bluetooth", 'b', 0, G_OPTION_ARG_STRING, &bt_device,
+			"set the rfkill name for your bluetooth device", "acer-bluetooth" },
+		{ NULL }
+	};
+
+	context = g_option_context_new ("rfkill switch gtk");
+	g_option_context_add_main_entries (context, entries, NULL);
+	g_option_context_add_group(context, gtk_get_option_group(TRUE));
+	if (!g_option_context_parse(context, pargc, pargv, &err)) {
+		g_print ("Failed to initialize: %s\n", err->message);
+		exit(0);
+	}
+
+	if (wlan_device == NULL) {
+		wlan_device = DEFAULT_WLAN;
+	}
+	if (bt_device == NULL) {
+		bt_device = DEFAULT_BT;
+	}
+}
 
 int
 main (int argc, char *argv[])
@@ -350,11 +384,12 @@ main (int argc, char *argv[])
 
 	GtkBorder padding;
 
-
-	char *text;
-
 	gtk_init (&argc, &argv);
 
+	/* parse commandline options */
+	parse_option(&argc, &argv);
+
+	/* initialize states */
 	parse_directory();
 	init_pixbufs();
 
