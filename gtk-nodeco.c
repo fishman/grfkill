@@ -286,6 +286,18 @@ void init_pixbufs(){
 	wwan_unblocked_pb = gdk_pixbuf_from_pixdata(&wwan_unblocked_inline, TRUE, NULL);
 }
 
+static gboolean
+quit_timeout_handler(GtkWidget *window)
+{
+	if (window == NULL) return FALSE;
+
+	gtk_widget_destroy (window);
+	exit(0);
+
+	return TRUE;
+}
+
+
 int
 main (int argc, char *argv[])
 {
@@ -388,6 +400,7 @@ main (int argc, char *argv[])
 
 	gtk_widget_grab_focus (window);
 
+	g_timeout_add(4000, (GSourceFunc) quit_timeout_handler, (gpointer) window);
 	gtk_widget_show_all (window);
 
 	gtk_main ();
