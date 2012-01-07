@@ -372,7 +372,7 @@ parse_option(gint *pargc, gchar **pargv[]){
 		{ NULL }
 	};
 
-	context = g_option_context_new ("rfkill switch gtk");
+	context = g_option_context_new ("");
 	g_option_context_add_main_entries (context, entries, NULL);
 	g_option_context_add_group(context, gtk_get_option_group(TRUE));
 	if (!g_option_context_parse(context, pargc, pargv, &err)) {
