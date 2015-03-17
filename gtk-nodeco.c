@@ -40,8 +40,8 @@
 #include "wwan-blocked.h"
 #include "wwan-unblocked.h"
 
-#define DEFAULT_WLAN "acer-wireless"
-#define DEFAULT_BT   "acer-bluetooth"
+#define DEFAULT_WLAN "wlan"
+#define DEFAULT_BT   "bluetooth"
 
 static gchar css_data[] = "GtkWindow {\
     border-radius: 5;\
@@ -310,7 +310,7 @@ gboolean get_rfkill_state(gchar *soft_state){
 void parse_directory(){
 	const gchar path[] = "/sys/class/rfkill";
 	GDir *d = g_dir_open( path,0,NULL );
-	gchar *contents;
+	gchar *type;
 	gchar *soft_state;
 	gchar *index;
 	gsize length;
@@ -320,20 +320,20 @@ void parse_directory(){
 		gchar *filename = g_build_filename( path,files,NULL );
 		/* rfkill folder is full of symlinks */
 		if ( g_file_test( filename,G_FILE_TEST_IS_SYMLINK ) ) {
-			g_file_get_contents(g_strconcat(filename, "/name",NULL), &contents, &length, NULL);
+			g_file_get_contents(g_strconcat(filename, "/type",NULL), &type, &length, NULL);
 			g_file_get_contents(g_strconcat(filename, "/index",NULL), &index, &length, NULL);
 			g_file_get_contents(g_strconcat(filename, "/soft",NULL), &soft_state, &length, NULL);
 
-			if (g_strrstr (contents, wlan_device)) {
+			if (g_strrstr (type, wlan_device)) {
 				wlan_state = get_rfkill_state(soft_state);
 				wlan_index = g_ascii_strtoll(index, NULL, 10);
 			}
-			else if (g_strrstr (contents, bt_device)) {
+			else if (g_strrstr (type, bt_device)) {
 				bt_state = get_rfkill_state(soft_state);
 				bt_index = g_ascii_strtoll(index, NULL, 10);
 			}
 			g_free(index);
-			g_free(contents);
+			g_free(type);
 			g_free(soft_state);
 			g_free( filename );
 		}
